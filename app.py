@@ -108,14 +108,10 @@ for key, default in {
 # UTILITIES
 # =====================================================
 def fetch_live_flow():
-    headers = {"User-Agent": "Mozilla/5.0"}
-    r = requests.get(LIVE_URL, headers=headers, timeout=10)
-    soup = BeautifulSoup(r.text, "html.parser")
-    for cls in LIVE_CLASSES:
-        tag = soup.find("span", class_=cls)
-        if tag:
-            return float(tag.text.replace(",", "").strip())
-    raise ValueError("Live flow value not found")
+    try:
+        return float(BeautifulSoup(requests.get(LIVE_URL, headers={"User-Agent":"Mozilla/5.0"}, timeout=5).text, "html.parser").find("span", class_="gross").get_text(strip=True).replace(",", ""))
+    except:
+        return np.nan
 
 def load_data():
     df = pd.read_csv(DATA_FILE, header=None)
@@ -556,6 +552,7 @@ if os.path.exists(LOG_PATH):
     )
 
     st.plotly_chart(fig, use_container_width=True)
+
 
 
 
