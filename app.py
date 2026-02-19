@@ -19,10 +19,9 @@ ANOMALY_PATH = "anomaly_model.pkl"
 BASELINE_PATH = "baseline_stats.pkl"
 LOG_PATH = "live_log.csv"
 
-LIVE_URL = "https://markets.businessinsider.com/currencies/eth-usd"
+LIVE_URL = "http://10.207.195.198/dynparm_187.htm"
 LIVE_CLASSES = [
-    "price-section__current-value",
-    "price-section__absolute-value"
+    "gross"
 ]
 
 DRIFT_Z_THRESHOLD = 2.5
@@ -557,6 +556,7 @@ if os.path.exists(LOG_PATH):
     )
 
     st.plotly_chart(fig, use_container_width=True)
+
 
 
 
