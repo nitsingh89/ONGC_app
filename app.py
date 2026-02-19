@@ -394,17 +394,18 @@ if run:
     # LOGGING
     # ======================
    log = pd.DataFrame([[datetime.now(),pressure,temperature,flow,
-                     p_pred,t_pred,f_pred,
-                     score,severity,health_score]],
-    columns=["Time","Pressure","Temperature","Flow",
-             "P_Pred","T_Pred","F_Pred",
-             "Score","Severity","HealthScore"])
+                         p_pred,t_pred,f_pred,
+                         score,severity,failure_prob,
+                         health_score,rul,action,model_stability]],
+        columns=["Time","Pressure","Temperature","Flow",
+                 "P_Pred","T_Pred","F_Pred",
+                 "Score","Severity","FailureProb",
+                 "HealthScore","RUL","Action","ModelStability"])
 
-    # SAFE WRITE
-    if not os.path.exists(LOG_PATH):
-        log.to_csv(LOG_PATH, index=False)
-    else:
-        log.to_csv(LOG_PATH, mode='a', header=False, index=False)
+    log.to_csv(LOG_PATH, mode='a', header=not os.path.exists(LOG_PATH), index=False)
+
+    st.session_state.last_result = log.iloc[0]
+
 
 
 
@@ -551,5 +552,6 @@ if os.path.exists(LOG_PATH):
     )
 
     st.plotly_chart(fig, use_container_width=True)
+
 
 
