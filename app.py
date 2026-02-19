@@ -20,9 +20,8 @@ BASELINE_PATH = "baseline_stats.pkl"
 LOG_PATH = "live_log.csv"
 
 LIVE_URL = "http://10.207.195.198/dynparm_187.htm"
-LIVE_CLASSES = [
-    "gross"
-]
+LIVE_CLASSES = ["gross"]
+
 
 DRIFT_Z_THRESHOLD = 2.5
 
@@ -108,10 +107,14 @@ for key, default in {
 # UTILITIES
 # =====================================================
 def fetch_live_flow():
-    try:
-        return float(BeautifulSoup(requests.get(LIVE_URL, headers={"User-Agent":"Mozilla/5.0"}, timeout=5).text, "html.parser").find("span", class_="gross").get_text(strip=True).replace(",", ""))
-    except:
-        return np.nan
+    headers = {"User-Agent": "Mozilla/5.0"}
+    r = requests.get("http://10.207.195.198/dynparm_187.htm", headers=headers, timeout=10)
+    soup = BeautifulSoup(r.text, "html.parser")
+    tag = soup.find(class_="gross")
+    if tag:
+        return float(tag.text.strip().replace(",", ""))
+    raise ValueError("Live flow value not found")
+
 
 def load_data():
     df = pd.read_csv(DATA_FILE, header=None)
@@ -552,6 +555,7 @@ if os.path.exists(LOG_PATH):
     )
 
     st.plotly_chart(fig, use_container_width=True)
+
 
 
 
