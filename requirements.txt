@@ -9,5 +9,5 @@ beautifulsoup4
 plotly
 time
 os
-ploly
 plot.graph_objects
+
