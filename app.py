@@ -35,10 +35,25 @@ st.set_page_config(page_title="ONGC Predictive Maintenance", layout="wide")
 st.markdown("""
 <style>
 
+/* ===== Global background ===== */
 [data-testid="stAppViewContainer"] {
     background-color: #0e1117;
     color: white;
 }
+
+/* ===== Sidebar background ===== */
+[data-testid="stSidebar"] {
+    background-color: #0e1117;
+}
+
+/* ===== Remove white blocks around charts/tables ===== */
+[data-testid="stMetric"],
+[data-testid="stDataFrame"],
+[data-testid="stPlotlyChart"],
+.block-container {
+    background-color: #0e1117 !important;
+}
+
 
 /* KPI Card Base */
 .kpi-card {
@@ -550,4 +565,5 @@ if os.path.exists(LOG_PATH):
     )
 
     st.plotly_chart(fig, use_container_width=True)
+
 
