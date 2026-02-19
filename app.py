@@ -393,7 +393,7 @@ if run:
     # ======================
     # LOGGING
     # ======================
-   log = pd.DataFrame([[datetime.now(),pressure,temperature,flow,
+    log = pd.DataFrame([[datetime.now(),pressure,temperature,flow,
                          p_pred,t_pred,f_pred,
                          score,severity,failure_prob,
                          health_score,rul,action,model_stability]],
@@ -405,8 +405,6 @@ if run:
     log.to_csv(LOG_PATH, mode='a', header=not os.path.exists(LOG_PATH), index=False)
 
     st.session_state.last_result = log.iloc[0]
-
-
 
 
 # =====================================================
@@ -552,6 +550,4 @@ if os.path.exists(LOG_PATH):
     )
 
     st.plotly_chart(fig, use_container_width=True)
-
-
 
