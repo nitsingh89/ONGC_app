@@ -1,3 +1,4 @@
+
 streamlit
 pandas
 numpy
@@ -7,3 +8,6 @@ requests
 beautifulsoup4
 plotly
 time
+os
+ploly
+plot.graph_objects
