@@ -37,13 +37,13 @@ st.markdown("""
 
 /* ===== Global background ===== */
 [data-testid="stAppViewContainer"] {
-    background-color: #0e1117;
+    background-color: #2b2b2b;
     color: white;
 }
 
 /* ===== Sidebar background ===== */
 [data-testid="stSidebar"] {
-    background-color: #0e1117;
+    background-color: #2b2b2b;
 }
 
 /* ===== Remove white blocks around charts/tables ===== */
@@ -51,7 +51,7 @@ st.markdown("""
 [data-testid="stDataFrame"],
 [data-testid="stPlotlyChart"],
 .block-container {
-    background-color: #0e1117 !important;
+    background-color: #2b2b2b !important;
 }
 
 
@@ -565,5 +565,6 @@ if os.path.exists(LOG_PATH):
     )
 
     st.plotly_chart(fig, use_container_width=True)
+
 
 
