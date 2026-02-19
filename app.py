@@ -193,7 +193,10 @@ st.sidebar.header("🔧 Flow Meter Inputs")
 pressure = st.sidebar.number_input("Pressure", value=18.0, key="pressure_input")
 temperature = st.sidebar.number_input("Temperature", value=60.0, key="temp_input")
 
-run = st.sidebar.button("🔄 Fetch Live Flow")
+st.sidebar.header("Live Control")
+
+auto_refresh = st.sidebar.checkbox("Enable Auto Refresh", value=True)
+refresh_interval = st.sidebar.slider("Refresh Interval (sec)", 5, 60, 10)
 
 st.sidebar.markdown("### ⏱ Live Control")
 
@@ -213,79 +216,61 @@ if manual_retrain:
         models, anomaly_model, baseline = retrain_from_file()
     st.success("♻️ Retraining completed")
 
+# Auto refresh trigger
+if auto_refresh:
+    time.sleep(refresh_interval)
+    st.rerun()
 
 # =====================================================
 # MAIN EXECUTION
 # =====================================================
-if run:
+flow = fetch_live_flow()
 
-    flow = fetch_live_flow()
-    st.sidebar.success(f"Live Flow: {flow}")
+# Run only if new value (prevents duplicate logs)
+if flow != st.session_state.last_flow:
 
-    if st.session_state.last_flow != flow:
-        st.session_state.last_flow = flow
+    st.session_state.last_flow = flow
 
-        # Predictions
-        p_pred = models["pressure"].predict([[temperature, flow]])[0]
-        t_pred = models["temperature"].predict([[pressure, flow]])[0]
-        f_pred = models["flow"].predict([[pressure, temperature]])[0]
+    st.sidebar.success(f"Live Flow: {flow:.2f}")
 
-        # Residuals
-        p_res = pressure - p_pred
-        t_res = temperature - t_pred
-        f_res = flow - f_pred
+    p_pred = models["pressure"].predict([[temperature, flow]])[0]
+    t_pred = models["temperature"].predict([[pressure, flow]])[0]
+    f_pred = models["flow"].predict([[pressure, temperature]])[0]
 
-        residuals = pd.DataFrame([[p_res,t_res,f_res]],
-                                 columns=["P_res","T_res","F_res"])
+    p_res = pressure - p_pred
+    t_res = temperature - t_pred
+    f_res = flow - f_pred
 
-        # Anomaly
-        score = anomaly_model.decision_function(residuals)[0]
-        flag = anomaly_model.predict(residuals)[0]
+    residuals = pd.DataFrame([[p_res,t_res,f_res]],
+                             columns=["P_res","T_res","F_res"])
 
-        severity = "🟢 NORMAL"
-        if flag == -1:
-            severity = "🟡 LOW"
-            if score < -0.12: severity = "🟠 MEDIUM"
-            if score < -0.25: severity = "🔴 HIGH"
+    score = anomaly_model.decision_function(residuals)[0]
+    flag = anomaly_model.predict(residuals)[0]
 
-        # Health Index
-        baseline_std = np.mean(list(baseline["std"].values()))
-        avg_residual = np.mean(np.abs([p_res,t_res,f_res]))
-        health_score = max(0, min(100, 100 - (avg_residual/baseline_std)*10))
+    severity = "NORMAL"
+    if flag == -1:
+        severity = "LOW"
+        if score < -0.12: severity = "MEDIUM"
+        if score < -0.25: severity = "HIGH"
 
-        # RUL Estimation
-        st.session_state.residual_history.append(avg_residual)
-        trend = 0
-        rul = "Stable"
+    health_score = max(0, min(100, 100 - np.mean(np.abs([p_res,t_res,f_res]))*5))
 
-        if len(st.session_state.residual_history) > 5:
-            trend = np.polyfit(
-                range(len(st.session_state.residual_history)),
-                st.session_state.residual_history,
-                1
-            )[0]
-            if trend > 0:
-                rul = round(health_score / (trend*10 + 1e-6),1)
+    st.metric("Flow", f"{flow:.2f}")
+    st.metric("Health Score", f"{health_score:.1f}%")
+    st.metric("Anomaly", severity)
 
-        # Drift Detection
-        if detect_drift(residuals, baseline):
-            st.warning("⚠️ Data Drift Detected – Retraining Models")
-            models, anomaly_model, baseline = train_models(load_data())
+    # SAFE LOG WRITE
+    log = pd.DataFrame([[datetime.now(),pressure,temperature,flow,
+                         p_pred,t_pred,f_pred,
+                         score,severity,health_score]],
+        columns=["Time","Pressure","Temperature","Flow",
+                 "P_Pred","T_Pred","F_Pred",
+                 "Score","Severity","HealthScore"])
 
-        # Logging
-        log = pd.DataFrame([[datetime.now(),pressure,temperature,flow,
-                             p_pred,t_pred,f_pred,
-                             score,severity,health_score,rul]],
-            columns=["Time","Pressure","Temperature","Flow",
-                     "P_Pred","T_Pred","F_Pred",
-                     "Score","Severity","HealthScore","RUL"])
-
-        if os.path.exists(LOG_PATH):
-            pd.concat([pd.read_csv(LOG_PATH),log]).to_csv(LOG_PATH,index=False)
-        else:
-            log.to_csv(LOG_PATH,index=False)
-
-        st.session_state.last_result = log.iloc[0]
+    if not os.path.exists(LOG_PATH):
+        log.to_csv(LOG_PATH, index=False)
+    else:
+        log.to_csv(LOG_PATH, mode='a', header=False, index=False)
 
 
                 #********************************#
@@ -550,4 +535,5 @@ if os.path.exists(LOG_PATH):
     )
 
     st.plotly_chart(fig, use_container_width=True)
+
 
