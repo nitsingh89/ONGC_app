@@ -35,17 +35,10 @@ st.set_page_config(page_title="ONGC Predictive Maintenance", layout="wide")
 st.markdown("""
 <style>
 
-/* ===== GLOBAL BACKGROUND ===== */
 [data-testid="stAppViewContainer"] {
-    background-color: #2b2b2b;   /* main grey */
+    background-color: #0e1117;
     color: white;
 }
-
-/* ===== SIDEBAR BACKGROUND ===== */
-[data-testid="stSidebar"] {
-    background-color: #2b2b2b;   /* same grey */
-}
-
 /* Remove white blocks */
 .block-container,
 [data-testid="stMetric"],
@@ -564,6 +557,7 @@ if os.path.exists(LOG_PATH):
     )
 
     st.plotly_chart(fig, use_container_width=True)
+
 
 
 
