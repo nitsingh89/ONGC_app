@@ -1,4 +1,3 @@
-
 streamlit
 pandas
 numpy
@@ -7,7 +6,3 @@ joblib
 requests
 beautifulsoup4
 plotly
-os
-plot.graph_objects
-
-
