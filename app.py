@@ -107,13 +107,15 @@ for key, default in {
 # UTILITIES
 # =====================================================
 def fetch_live_flow():
-    headers = {"User-Agent": "Mozilla/5.0"}
-    r = requests.get("http://10.207.195.198/dynparm_187.htm", headers=headers, timeout=10)
-    soup = BeautifulSoup(r.text, "html.parser")
-    tag = soup.find(class_="gross")
-    if tag:
-        return float(tag.text.strip().replace(",", ""))
-    raise ValueError("Live flow value not found")
+    try:
+        headers = {"User-Agent": "Mozilla/5.0"}
+        r = requests.get("http://10.207.195.198/dynparm_187.htm", headers=headers, timeout=5)
+        soup = BeautifulSoup(r.text, "html.parser")
+        tag = soup.find(class_="gross")
+        if tag:
+            return float(tag.text.strip().replace(",", ""))
+    except Exception:
+        return None  # intranet not reachable
 
 
 def load_data():
@@ -225,7 +227,13 @@ if manual_retrain:
 if run:
 
     flow = fetch_live_flow()
-    st.sidebar.success(f"Live Flow: {flow}")
+
+    if flow is None:
+        st.sidebar.warning("⚠️ Intranet not reachable – using manual/last value")
+        flow = st.session_state.last_flow if st.session_state.last_flow else 0.0
+    else:
+        st.sidebar.success(f"Live Flow: {flow}")
+
 
     if st.session_state.last_flow != flow:
         st.session_state.last_flow = flow
@@ -505,9 +513,9 @@ if st.session_state.last_result is not None:
     # Trend Visualization
     # =============================
 
-if os.path.exists(LOG_PATH):
-
+if os.path.exists(LOG_PATH) and os.path.getsize(LOG_PATH) > 0:
     df_log = pd.read_csv(LOG_PATH)
+
 
     df_log["Error"] = df_log["Flow"] - df_log["F_Pred"]
 
@@ -555,6 +563,7 @@ if os.path.exists(LOG_PATH):
     )
 
     st.plotly_chart(fig, use_container_width=True)
+
 
 
 
