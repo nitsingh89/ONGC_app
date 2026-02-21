@@ -1,31 +1,3 @@
-import streamlit as st
-import joblib
-import pandas as pd
-import numpy as np
-import requests
-import os
-from bs4 import BeautifulSoup
-from datetime import datetime
-from sklearn.ensemble import RandomForestRegressor, IsolationForest
-import plotly.graph_objects as go
-from streamlit_autorefresh import st_autorefresh
-
-# =====================================================
-# PATH CONFIG
-# =====================================================
-DATA_FILE = "data.csv"
-MODEL_PATH = "rf_models.pkl"
-ANOMALY_PATH = "anomaly_model.pkl"
-BASELINE_PATH = "baseline_stats.pkl"
-LOG_PATH = "live_log.csv"
-
-LOG_COLUMNS = [
-    "Time","Pressure","Temperature","Flow",
-    "P_Pred","T_Pred","F_Pred",
-    "Score","Severity","FailureProb",
-    "HealthScore","RUL","Action","ModelStability"
-]
-
 LIVE_URL = "https://markets.businessinsider.com/currencies/eth-usd"
 LIVE_CLASSES = [
     "price-section__current-value",
@@ -35,17 +7,75 @@ LIVE_CLASSES = [
 DRIFT_Z_THRESHOLD = 2.5
 
 # =====================================================
-# PAGE CONFIG
+# PAGE CONFIG + DARK THEME
 # =====================================================
 st.set_page_config(page_title="ONGC Predictive Maintenance", layout="wide")
-st.title("ONGC – Flow Meter Predictive Maintenance Dashboard")
+
+st.markdown("""
+<style>
+
+[data-testid="stAppViewContainer"] {
+    background-color: #0e1117;
+    color: white;
+}
+
+/* KPI Card Base */
+.kpi-card {
+    background: #1c1f26;
+    padding: 20px;
+    border-radius: 15px;
+    text-align: center;
+    box-shadow: 0 0 15px rgba(0,255,255,0.2);
+    transition: all 0.4s ease-in-out;
+}
+
+/* Glow animation */
+@keyframes glowPulse {
+    0% { box-shadow: 0 0 10px rgba(0,255,255,0.3); }
+    50% { box-shadow: 0 0 25px rgba(0,255,255,0.8); }
+    100% { box-shadow: 0 0 10px rgba(0,255,255,0.3); }
+}
+
+.glow {
+    animation: glowPulse 2s infinite;
+}
+
+/* Severity Colors */
+.normal { border: 2px solid #00ff99; }
+.low { border: 2px solid #ffd700; }
+.medium { border: 2px solid #ff8800; }
+.high { border: 2px solid #ff0033; }
+
+.kpi-title {
+    font-size: 14px;
+    opacity: 0.7;
+}
+
+.kpi-value {
+    font-size: 26px;
+    font-weight: bold;
+}
+
+</style>
+""", unsafe_allow_html=True)
+
+
+st.title(" ONGC – Flow Meter Predictive Maintenance Dashboard")
 
 # =====================================================
 # SESSION STATE INIT
 # =====================================================
+st.session_state.setdefault("last_flow", None)
 st.session_state.setdefault("last_result", None)
 st.session_state.setdefault("residual_history", [])
-st.session_state.setdefault("drift_counter", 0)
+
+for key, default in {
+    "last_flow": None,
+    "last_result": None,
+    "residual_history": []
+}.items():
+    if key not in st.session_state:
+        st.session_state[key] = default
 
 # =====================================================
 # UTILITIES
@@ -70,6 +100,7 @@ def load_data():
 # TRAINING
 # =====================================================
 def train_models(df):
+
     models = {
         "pressure": RandomForestRegressor(n_estimators=300, random_state=42),
         "temperature": RandomForestRegressor(n_estimators=300, random_state=42),
@@ -89,7 +120,7 @@ def train_models(df):
 
     baseline = {
         "mean": df[["P_res","T_res","F_res"]].mean().to_dict(),
-        "std": df[["P_res","T_res","F_res"]].std().replace(0,1e-6).to_dict()
+        "std": df[["P_res","T_res","F_res"]].std().replace(0, 1e-6).to_dict()
     }
 
     joblib.dump(models, MODEL_PATH)
@@ -100,19 +131,21 @@ def train_models(df):
 
 def detect_drift(residuals, baseline):
     for col in residuals.columns:
-        z = abs((residuals[col].iloc[0] - baseline["mean"][col]) /
-                baseline["std"][col])
+        z = abs(
+            (residuals[col].iloc[0] - baseline["mean"][col])
+            / baseline["std"][col]
+        )
         if z > DRIFT_Z_THRESHOLD:
             return True
     return False
 
 # =====================================================
-# LOAD OR TRAIN
+# LOAD / TRAIN
 # =====================================================
 @st.cache_resource
 def load_or_train():
     df = load_data()
-    if not all(map(os.path.exists,[MODEL_PATH,ANOMALY_PATH,BASELINE_PATH])):
+    if not all(map(os.path.exists, [MODEL_PATH, ANOMALY_PATH, BASELINE_PATH])):
         return train_models(df)
     return (
         joblib.load(MODEL_PATH),
@@ -122,52 +155,61 @@ def load_or_train():
 
 models, anomaly_model, baseline = load_or_train()
 st.success("✅ Models Ready")
+def retrain_from_file():
+    df = pd.read_csv(DATA_FILE, header=None)
+    df.columns = ["Pressure","Temperature","Flow"]
+    df = df.apply(pd.to_numeric, errors="coerce").ffill().bfill()
+    return train_models(df)
+
 
 # =====================================================
-# SIDEBAR
-# =====================================================
-st.sidebar.header("Flow Inputs")
-pressure = st.sidebar.number_input("Pressure", value=18.0)
-temperature = st.sidebar.number_input("Temperature", value=60.0)
-
-run = st.sidebar.button("Fetch Live Flow")
-
-st.sidebar.markdown("### Auto Refresh")
-enable_refresh = st.sidebar.checkbox("Enable Auto Refresh", value=False)
-refresh_interval = st.sidebar.slider("Interval (sec)",5,60,10)
-
-if enable_refresh:
-    st_autorefresh(interval=refresh_interval*1000, key="refresh")
-
-# =====================================================
-# MAIN EXECUTION (ONLY ONE BLOCK)
-# =====================================================
-# =====================================================
-# MAIN EXECUTION ENGINE (Button + Auto Refresh)
+# SIDEBAR INPUT
 # =====================================================
 
-execute = run or auto_refresh
+st.sidebar.image("ongc_logo.png", width=180)
 
-if execute:
+st.sidebar.header("🔧 Flow Meter Inputs")
+pressure = st.sidebar.number_input("Pressure", value=18.0, key="pressure_input")
+temperature = st.sidebar.number_input("Temperature", value=60.0, key="temp_input")
 
-    try:
-        flow = fetch_live_flow()
-        st.sidebar.success(f"Live Flow: {flow}")
-    except:
-        st.warning("Live flow fetch failed")
-        flow = st.session_state.last_flow
+run = st.sidebar.button("🔄 Fetch Live Flow")
 
-    if flow is not None:
+st.sidebar.markdown("### ⏱ Live Control")
 
+auto_refresh = st.sidebar.checkbox("Enable Auto Refresh", value=False)
+refresh_interval = st.sidebar.slider("Refresh Interval (sec)", 5, 60, 10)
+
+manual_train = st.sidebar.button("🧠 Train Models")
+manual_retrain = st.sidebar.button("♻️ Retrain Models")
+
+if manual_train:
+    with st.spinner("Training models..."):
+        models, anomaly_model, baseline = retrain_from_file()
+    st.success("✅ Training completed")
+
+if manual_retrain:
+    with st.spinner("Retraining models..."):
+        models, anomaly_model, baseline = retrain_from_file()
+    st.success("♻️ Retraining completed")
+
+
+# =====================================================
+# MAIN EXECUTION
+# =====================================================
+if run:
+
+    flow = fetch_live_flow()
+    st.sidebar.success(f"Live Flow: {flow}")
+
+    if st.session_state.last_flow != flow:
         st.session_state.last_flow = flow
 
-        # ======================
-        # MODEL PREDICTIONS
-        # ======================
+        # Predictions
         p_pred = models["pressure"].predict([[temperature, flow]])[0]
         t_pred = models["temperature"].predict([[pressure, flow]])[0]
         f_pred = models["flow"].predict([[pressure, temperature]])[0]
 
+        # Residuals
         p_res = pressure - p_pred
         t_res = temperature - t_pred
         f_res = flow - f_pred
@@ -175,13 +217,9 @@ if execute:
         residuals = pd.DataFrame([[p_res,t_res,f_res]],
                                  columns=["P_res","T_res","F_res"])
 
-        # ======================
-        # ANOMALY + PROBABILITY
-        # ======================
+        # Anomaly
         score = anomaly_model.decision_function(residuals)[0]
         flag = anomaly_model.predict(residuals)[0]
-
-        failure_prob = round(min(100, abs(score)*180),2)
 
         severity = "🟢 NORMAL"
         if flag == -1:
@@ -189,149 +227,306 @@ if execute:
             if score < -0.12: severity = "🟠 MEDIUM"
             if score < -0.25: severity = "🔴 HIGH"
 
-        # ======================
-        # WEIGHTED HEALTH INDEX
-        # ======================
-        wP, wT, wF = 0.2, 0.3, 0.5
-        weighted_res = (wP*abs(p_res) + wT*abs(t_res) + wF*abs(f_res))
-
+        # Health Index
         baseline_std = np.mean(list(baseline["std"].values()))
-        health_score = max(0, min(100, 100 - (weighted_res/baseline_std)*12))
+        avg_residual = np.mean(np.abs([p_res,t_res,f_res]))
+        health_score = max(0, min(100, 100 - (avg_residual/baseline_std)*10))
 
-        # ======================
-        # RUL ESTIMATION
-        # ======================
-        st.session_state.residual_history.append(weighted_res)
-
+        # RUL Estimation
+        st.session_state.residual_history.append(avg_residual)
+        trend = 0
         rul = "Stable"
-        if len(st.session_state.residual_history) > 8:
+
+        if len(st.session_state.residual_history) > 5:
             trend = np.polyfit(
                 range(len(st.session_state.residual_history)),
                 st.session_state.residual_history,
                 1
             )[0]
-
             if trend > 0:
-                predicted_time_to_threshold = (health_score - 60) / (trend*12 + 1e-6)
-                rul = round(max(0, predicted_time_to_threshold),1)
+                rul = round(health_score / (trend*10 + 1e-6),1)
 
-        # ======================
-        # DRIFT CONTROL
-        # ======================
-        drift_detected = detect_drift(residuals, baseline)
-
-        if "drift_counter" not in st.session_state:
-            st.session_state.drift_counter = 0
-
-        if drift_detected:
-            st.session_state.drift_counter += 1
-        else:
-            st.session_state.drift_counter = 0
-
-        model_stability = max(0, 100 - st.session_state.drift_counter*10)
-
-        if st.session_state.drift_counter >= 3:
-            st.warning("⚠️ Persistent Drift – Auto Retraining Triggered")
+        # Drift Detection
+        if detect_drift(residuals, baseline):
+            st.warning("⚠️ Data Drift Detected – Retraining Models")
             models, anomaly_model, baseline = train_models(load_data())
-            st.session_state.drift_counter = 0
 
-        # ======================
-        # MAINTENANCE ACTION
-        # ======================
-        if severity == "🔴 HIGH":
-            action = "Immediate Shutdown Recommended"
-        elif severity == "🟠 MEDIUM":
-            action = "Inspect within 24 hrs"
-        elif severity == "🟡 LOW":
-            action = "Monitor Closely"
-        else:
-            action = "Normal Operation"
-
-        if severity in ["🔴 HIGH","🟠 MEDIUM"]:
-            st.error(f"🚨 ALERT: {action}")
-
-        # ======================
-        # SAFE LOGGING
-        # ======================
-        LOG_COLUMNS = ["Time","Pressure","Temperature","Flow",
-                       "P_Pred","T_Pred","F_Pred",
-                       "Score","Severity","FailureProb",
-                       "HealthScore","RUL","Action","ModelStability"]
-
+        # Logging
         log = pd.DataFrame([[datetime.now(),pressure,temperature,flow,
                              p_pred,t_pred,f_pred,
-                             score,severity,failure_prob,
-                             health_score,rul,action,model_stability]],
-                           columns=LOG_COLUMNS)
+                             score,severity,health_score,rul]],
+            columns=["Time","Pressure","Temperature","Flow",
+                     "P_Pred","T_Pred","F_Pred",
+                     "Score","Severity","HealthScore","RUL"])
 
-        log.to_csv(LOG_PATH, mode='a',
-                   header=not os.path.exists(LOG_PATH),
-                   index=False)
+        if os.path.exists(LOG_PATH):
+            pd.concat([pd.read_csv(LOG_PATH),log]).to_csv(LOG_PATH,index=False)
+        else:
+            log.to_csv(LOG_PATH,index=False)
 
         st.session_state.last_result = log.iloc[0]
 
 
+                #********************************#
+
 # =====================================================
-# DISPLAY
+# ADVANCED PM ENGINE
+# =====================================================
+
+if run:
+
+    flow = fetch_live_flow()
+
+    # ======================
+    # MODEL PREDICTIONS
+    # ======================
+    p_pred = models["pressure"].predict([[temperature, flow]])[0]
+    t_pred = models["temperature"].predict([[pressure, flow]])[0]
+    f_pred = models["flow"].predict([[pressure, temperature]])[0]
+
+    p_res = pressure - p_pred
+    t_res = temperature - t_pred
+    f_res = flow - f_pred
+
+    residuals = pd.DataFrame([[p_res,t_res,f_res]],
+                             columns=["P_res","T_res","F_res"])
+
+    # ======================
+    # ANOMALY + PROBABILITY
+    # ======================
+    score = anomaly_model.decision_function(residuals)[0]
+    flag = anomaly_model.predict(residuals)[0]
+
+    failure_prob = round(min(100, abs(score)*180),2)
+
+    severity = "🟢 NORMAL"
+    if flag == -1:
+        severity = "🟡 LOW"
+        if score < -0.12: severity = "🟠 MEDIUM"
+        if score < -0.25: severity = "🔴 HIGH"
+
+    # ======================
+    # WEIGHTED HEALTH INDEX
+    # ======================
+    wP, wT, wF = 0.2, 0.3, 0.5
+    weighted_res = (wP*abs(p_res) + wT*abs(t_res) + wF*abs(f_res))
+
+    baseline_std = np.mean(list(baseline["std"].values()))
+    health_score = max(0, min(100, 100 - (weighted_res/baseline_std)*12))
+
+    # ======================
+    # THRESHOLD-BASED RUL
+    # ======================
+    st.session_state.residual_history.append(weighted_res)
+
+    rul = "Stable"
+    if len(st.session_state.residual_history) > 8:
+        trend = np.polyfit(
+            range(len(st.session_state.residual_history)),
+            st.session_state.residual_history,
+            1
+        )[0]
+
+        if trend > 0:
+            predicted_time_to_threshold = (health_score - 60) / (trend*12 + 1e-6)
+            rul = round(max(0, predicted_time_to_threshold),1)
+
+    # ======================
+    # SMART DRIFT CONTROL
+    # ======================
+    drift_detected = detect_drift(residuals, baseline)
+
+    if "drift_counter" not in st.session_state:
+        st.session_state.drift_counter = 0
+
+    if drift_detected:
+        st.session_state.drift_counter += 1
+    else:
+        st.session_state.drift_counter = 0
+
+    model_stability = max(0, 100 - st.session_state.drift_counter*10)
+
+    if st.session_state.drift_counter >= 3:
+        st.warning("⚠️ Persistent Drift – Auto Retraining Triggered")
+        models, anomaly_model, baseline = train_models(load_data())
+        st.session_state.drift_counter = 0
+
+    # ======================
+    # MAINTENANCE ACTION ENGINE
+    # ======================
+    if severity == "🔴 HIGH":
+        action = "Immediate Shutdown Recommended"
+    elif severity == "🟠 MEDIUM":
+        action = "Inspect within 24 hrs"
+    elif severity == "🟡 LOW":
+        action = "Monitor Closely"
+    else:
+        action = "Normal Operation"
+
+    # ======================
+    # ALERT SYSTEM
+    # ======================
+    if severity in ["🔴 HIGH","🟠 MEDIUM"]:
+        st.error(f"🚨 ALERT: {action}")
+
+    # ======================
+    # LOGGING
+    # ======================
+    log = pd.DataFrame([[datetime.now(),pressure,temperature,flow,
+                         p_pred,t_pred,f_pred,
+                         score,severity,failure_prob,
+                         health_score,rul,action,model_stability]],
+        columns=["Time","Pressure","Temperature","Flow",
+                 "P_Pred","T_Pred","F_Pred",
+                 "Score","Severity","FailureProb",
+                 "HealthScore","RUL","Action","ModelStability"])
+
+    log.to_csv(LOG_PATH, mode='a', header=not os.path.exists(LOG_PATH), index=False)
+
+    st.session_state.last_result = log.iloc[0]
+
+
+# =====================================================
+# DASHBOARD DISPLAY
 # =====================================================
 if st.session_state.last_result is not None:
 
     r = st.session_state.last_result
-    st.metric("Pressure", round(r["Pressure"],2))
-    st.metric("Temperature", round(r["Temperature"],2))
-    st.metric("Flow", round(r["Flow"],4))
-    st.metric("Health Score", round(r["HealthScore"],2))
-    st.metric("Failure Probability", f"{r['FailureProb']}%")
-    st.metric("Maintenance Action", r["Action"])
 
-# =====================================================
-# TREND GRAPH (SAFE READ)
-# =====================================================
+    severity_class = "normal"
+    if "LOW" in r["Severity"]:
+        severity_class = "low"
+    elif "MEDIUM" in r["Severity"]:
+        severity_class = "medium"
+    elif "HIGH" in r["Severity"]:
+        severity_class = "high"
+
+    # -------- ROW 1 --------
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.markdown(f"""
+        <div class="kpi-card glow">
+            <div class="kpi-title">Pressure</div>
+            <div class="kpi-value">{round(r["Pressure"],2)}</div>
+            <div>Δ {round(r["Pressure"]-r["P_Pred"],2)}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col2:
+        st.markdown(f"""
+        <div class="kpi-card glow">
+            <div class="kpi-title">Temperature</div>
+            <div class="kpi-value">{round(r["Temperature"],2)}</div>
+            <div>Δ {round(r["Temperature"]-r["T_Pred"],2)}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col3:
+        st.markdown(f"""
+        <div class="kpi-card glow">
+            <div class="kpi-title">Flow</div>
+            <div class="kpi-value">{round(r["Flow"],4)}</div>
+            <div>Δ {round(r["Flow"]-r["F_Pred"],4)}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # -------- ROW 2 --------
+    colA, colB, colC = st.columns(3)
+
+    with colA:
+        st.markdown(f"""
+        <div class="kpi-card glow {severity_class}">
+            <div class="kpi-title">Anomaly Level</div>
+            <div class="kpi-value">{r["Severity"]}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with colB:
+        st.markdown(f"""
+        <div class="kpi-card glow">
+            <div class="kpi-title">Health Score</div>
+            <div class="kpi-value">{round(r["HealthScore"],2)}%</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with colC:
+        st.markdown(f"""
+        <div class="kpi-card glow">
+            <div class="kpi-title">Estimated RUL</div>
+            <div class="kpi-value">{r["RUL"]}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with colB:
+        st.markdown(f"""
+    <div class="kpi-card glow">
+        <div class="kpi-title">Failure Probability</div>
+        <div class="kpi-value">{r["FailureProb"]}%</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    with colC:
+        st.markdown(f"""
+    <div class="kpi-card glow">
+        <div class="kpi-title">Maintenance Action</div>
+        <div class="kpi-value">{r["Action"]}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+    # =============================
+    # Trend Visualization
+    # =============================
+
 if os.path.exists(LOG_PATH):
 
-    try:
-        df_log = pd.read_csv(LOG_PATH)
-    except:
-        st.warning("Log file corrupted. Resetting log.")
-        os.remove(LOG_PATH)
-        df_log = pd.DataFrame()
+    df_log = pd.read_csv(LOG_PATH)
 
-    if not df_log.empty:
+    df_log["Error"] = df_log["Flow"] - df_log["F_Pred"]
 
-        df_log["Error"] = df_log["Flow"] - df_log["F_Pred"]
+    fig = go.Figure()
 
-        fig = go.Figure()
+    # Actual Flow
+    fig.add_trace(go.Scatter(
+        y=df_log["Flow"],
+        mode='lines',
+        name="Actual Flow",
+        line=dict(width=3)
+    ))
 
-        fig.add_trace(go.Scatter(
-            y=df_log["Flow"],
-            mode='lines',
-            name="Actual Flow"
-        ))
+    # Predicted Flow
+    fig.add_trace(go.Scatter(
+        y=df_log["F_Pred"],
+        mode='lines',
+        name="Predicted Flow",
+        line=dict(dash='dash')
+    ))
 
-        fig.add_trace(go.Scatter(
-            y=df_log["F_Pred"],
-            mode='lines',
-            name="Predicted Flow",
-            line=dict(dash='dash')
-        ))
+    # Error (Secondary Axis)
+    fig.add_trace(go.Scatter(
+        y=df_log["Error"],
+        mode='lines',
+        name="Prediction Error",
+        yaxis="y2",
+        line=dict(color='red')
+    ))
 
-        fig.add_trace(go.Scatter(
-            y=df_log["Error"],
-            mode='lines',
-            name="Prediction Error",
-            yaxis="y2"
-        ))
+    fig.update_layout(
+        height=500,
+        paper_bgcolor="#0e1117",
+        plot_bgcolor="#0e1117",
+        font_color="white",
 
-        fig.update_layout(
-            yaxis=dict(title="Flow"),
-            yaxis2=dict(title="Error",overlaying="y",side="right")
-        )
+        yaxis=dict(title="Flow"),
+        yaxis2=dict(
+            title="Error",
+            overlaying="y",
+            side="right"
+        ),
 
-        st.plotly_chart(fig,use_container_width=True)
-# =====================================================
-# AUTO REFRESH LOOP
-# =====================================================
-    if auto_refresh:
-        time.sleep(refresh_interval)
-        st.rerun()
+        legend=dict(x=0.01, y=0.99)
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
 
