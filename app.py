@@ -19,9 +19,11 @@ ANOMALY_PATH = "anomaly_model.pkl"
 BASELINE_PATH = "baseline_stats.pkl"
 LOG_PATH = "live_log.csv"
 
-LIVE_URL = "http://10.207.195.198/dynparm_187.htm"
-LIVE_CLASSES = ["gross"]
-
+LIVE_URL = "https://markets.businessinsider.com/currencies/eth-usd"
+LIVE_CLASSES = [
+    "price-section__current-value",
+    "price-section__absolute-value"
+]
 
 DRIFT_Z_THRESHOLD = 2.5
 
@@ -36,13 +38,6 @@ st.markdown("""
 [data-testid="stAppViewContainer"] {
     background-color: #0e1117;
     color: white;
-}
-/* Remove white blocks */
-.block-container,
-[data-testid="stMetric"],
-[data-testid="stDataFrame"],
-[data-testid="stPlotlyChart"] {
-    background-color: #2b2b2b !important;
 }
 
 /* KPI Card Base */
@@ -107,16 +102,14 @@ for key, default in {
 # UTILITIES
 # =====================================================
 def fetch_live_flow():
-    try:
-        headers = {"User-Agent": "Mozilla/5.0"}
-        r = requests.get("http://10.207.195.198/dynparm_187.htm", headers=headers, timeout=5)
-        soup = BeautifulSoup(r.text, "html.parser")
-        tag = soup.find(class_="gross")
+    headers = {"User-Agent": "Mozilla/5.0"}
+    r = requests.get(LIVE_URL, headers=headers, timeout=10)
+    soup = BeautifulSoup(r.text, "html.parser")
+    for cls in LIVE_CLASSES:
+        tag = soup.find("span", class_=cls)
         if tag:
-            return float(tag.text.strip().replace(",", ""))
-    except Exception:
-        return None  # intranet not reachable
-
+            return float(tag.text.replace(",", "").strip())
+    raise ValueError("Live flow value not found")
 
 def load_data():
     df = pd.read_csv(DATA_FILE, header=None)
@@ -227,13 +220,7 @@ if manual_retrain:
 if run:
 
     flow = fetch_live_flow()
-
-    if flow is None:
-        st.sidebar.warning("⚠️ Intranet not reachable – using manual/last value")
-        flow = st.session_state.last_flow if st.session_state.last_flow else 0.0
-    else:
-        st.sidebar.success(f"Live Flow: {flow}")
-
+    st.sidebar.success(f"Live Flow: {flow}")
 
     if st.session_state.last_flow != flow:
         st.session_state.last_flow = flow
@@ -513,9 +500,9 @@ if st.session_state.last_result is not None:
     # Trend Visualization
     # =============================
 
-if os.path.exists(LOG_PATH) and os.path.getsize(LOG_PATH) > 0:
-    df_log = pd.read_csv(LOG_PATH)
+if os.path.exists(LOG_PATH):
 
+    df_log = pd.read_csv(LOG_PATH)
 
     df_log["Error"] = df_log["Flow"] - df_log["F_Pred"]
 
@@ -563,12 +550,4 @@ if os.path.exists(LOG_PATH) and os.path.getsize(LOG_PATH) > 0:
     )
 
     st.plotly_chart(fig, use_container_width=True)
-
-
-
-
-
-
-
-
 
