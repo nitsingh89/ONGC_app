@@ -531,7 +531,11 @@ if st.session_state.last_result is not None:
 
 if os.path.exists(LOG_PATH):
 
-    df_log = pd.read_csv(LOG_PATH)
+    try:
+        df_log = pd.read_csv(LOG_PATH)
+    except Exception:
+        df_log = pd.DataFrame()  # fallback if corrupted
+
 
     df_log["Error"] = df_log["Flow"] - df_log["F_Pred"]
 
@@ -586,5 +590,6 @@ if os.path.exists(LOG_PATH):
 if auto_refresh:
     time.sleep(refresh_interval)
     st.rerun()
+
 
 
