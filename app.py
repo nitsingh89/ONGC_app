@@ -530,67 +530,41 @@ if st.session_state.last_result is not None:
     # =============================
 
     try:
-        df_log = pd.read_csv(LOG_PATH, on_bad_lines="skip")
-    except Exception:
-        df_log = pd.DataFrame()
-    
-    required_cols = ["Flow", "F_Pred"]
-    
-    if df_log.empty or not all(col in df_log.columns for col in required_cols):
-        st.info("No valid trend data available yet.")
+    df_log = pd.read_csv(LOG_PATH, on_bad_lines="skip")
+except Exception:
+    df_log = pd.DataFrame()
+
+required_cols = ["Timestamp", "Flow", "F_Pred"]
+
+if not set(required_cols).issubset(df_log.columns):
+    st.info("Trend data not available yet.")
+elif df_log.empty:
+    st.info("No logged data yet.")
+else:
+    df_log = df_log.dropna(subset=["Flow", "F_Pred"])
+
+    if df_log.empty:
+        st.info("Logged data contains no valid values yet.")
     else:
         df_log["Error"] = df_log["Flow"] - df_log["F_Pred"]
+        df_log["Timestamp"] = pd.to_datetime(df_log["Timestamp"], errors="coerce")
 
-    # your plotting code here
+        fig = go.Figure()
 
+        fig.add_trace(go.Scatter(
+            x=df_log["Timestamp"],
+            y=df_log["Flow"],
+            name="Actual Flow"
+        ))
 
+        fig.add_trace(go.Scatter(
+            x=df_log["Timestamp"],
+            y=df_log["F_Pred"],
+            name="Predicted Flow"
+        ))
 
-    df_log["Error"] = df_log["Flow"] - df_log["F_Pred"]
+        st.plotly_chart(fig, use_container_width=True)
 
-    fig = go.Figure()
-
-    # Actual Flow
-    fig.add_trace(go.Scatter(
-        y=df_log["Flow"],
-        mode='lines',
-        name="Actual Flow",
-        line=dict(width=3)
-    ))
-
-    # Predicted Flow
-    fig.add_trace(go.Scatter(
-        y=df_log["F_Pred"],
-        mode='lines',
-        name="Predicted Flow",
-        line=dict(dash='dash')
-    ))
-
-    # Error (Secondary Axis)
-    fig.add_trace(go.Scatter(
-        y=df_log["Error"],
-        mode='lines',
-        name="Prediction Error",
-        yaxis="y2",
-        line=dict(color='red')
-    ))
-
-    fig.update_layout(
-        height=500,
-        paper_bgcolor="#0e1117",
-        plot_bgcolor="#0e1117",
-        font_color="white",
-
-        yaxis=dict(title="Flow"),
-        yaxis2=dict(
-            title="Error",
-            overlaying="y",
-            side="right"
-        ),
-
-        legend=dict(x=0.01, y=0.99)
-    )
-
-    st.plotly_chart(fig, use_container_width=True)
 
 # =====================================================
 # AUTO REFRESH LOOP
@@ -598,6 +572,7 @@ if st.session_state.last_result is not None:
 if auto_refresh:
     time.sleep(refresh_interval)
     st.rerun()
+
 
 
 
