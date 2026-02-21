@@ -142,20 +142,31 @@ if enable_refresh:
 # =====================================================
 # MAIN EXECUTION (ONLY ONE BLOCK)
 # =====================================================
-if run or enable_refresh:
+# =====================================================
+# MAIN EXECUTION ENGINE (Button + Auto Refresh)
+# =====================================================
+
+execute = run or auto_refresh
+
+if execute:
 
     try:
         flow = fetch_live_flow()
+        st.sidebar.success(f"Live Flow: {flow}")
     except:
-        st.error("Unable to fetch live flow.")
-        flow = None
+        st.warning("Live flow fetch failed")
+        flow = st.session_state.last_flow
 
-    if flow:
+    if flow is not None:
 
-        # Predictions
-        p_pred = models["pressure"].predict([[temperature,flow]])[0]
-        t_pred = models["temperature"].predict([[pressure,flow]])[0]
-        f_pred = models["flow"].predict([[pressure,temperature]])[0]
+        st.session_state.last_flow = flow
+
+        # ======================
+        # MODEL PREDICTIONS
+        # ======================
+        p_pred = models["pressure"].predict([[temperature, flow]])[0]
+        t_pred = models["temperature"].predict([[pressure, flow]])[0]
+        f_pred = models["flow"].predict([[pressure, temperature]])[0]
 
         p_res = pressure - p_pred
         t_res = temperature - t_pred
@@ -164,51 +175,101 @@ if run or enable_refresh:
         residuals = pd.DataFrame([[p_res,t_res,f_res]],
                                  columns=["P_res","T_res","F_res"])
 
+        # ======================
+        # ANOMALY + PROBABILITY
+        # ======================
         score = anomaly_model.decision_function(residuals)[0]
         flag = anomaly_model.predict(residuals)[0]
 
-        failure_prob = round(min(100,abs(score)*180),2)
+        failure_prob = round(min(100, abs(score)*180),2)
 
-        severity = "NORMAL"
+        severity = "🟢 NORMAL"
         if flag == -1:
-            severity = "LOW"
-            if score < -0.12: severity = "MEDIUM"
-            if score < -0.25: severity = "HIGH"
+            severity = "🟡 LOW"
+            if score < -0.12: severity = "🟠 MEDIUM"
+            if score < -0.25: severity = "🔴 HIGH"
 
-        # Health
-        weighted_res = 0.2*abs(p_res)+0.3*abs(t_res)+0.5*abs(f_res)
+        # ======================
+        # WEIGHTED HEALTH INDEX
+        # ======================
+        wP, wT, wF = 0.2, 0.3, 0.5
+        weighted_res = (wP*abs(p_res) + wT*abs(t_res) + wF*abs(f_res))
+
         baseline_std = np.mean(list(baseline["std"].values()))
-        health_score = max(0,min(100,100-(weighted_res/baseline_std)*12))
+        health_score = max(0, min(100, 100 - (weighted_res/baseline_std)*12))
 
-        # Drift logic
-        if detect_drift(residuals,baseline):
+        # ======================
+        # RUL ESTIMATION
+        # ======================
+        st.session_state.residual_history.append(weighted_res)
+
+        rul = "Stable"
+        if len(st.session_state.residual_history) > 8:
+            trend = np.polyfit(
+                range(len(st.session_state.residual_history)),
+                st.session_state.residual_history,
+                1
+            )[0]
+
+            if trend > 0:
+                predicted_time_to_threshold = (health_score - 60) / (trend*12 + 1e-6)
+                rul = round(max(0, predicted_time_to_threshold),1)
+
+        # ======================
+        # DRIFT CONTROL
+        # ======================
+        drift_detected = detect_drift(residuals, baseline)
+
+        if "drift_counter" not in st.session_state:
+            st.session_state.drift_counter = 0
+
+        if drift_detected:
             st.session_state.drift_counter += 1
         else:
             st.session_state.drift_counter = 0
 
-        model_stability = max(0,100-st.session_state.drift_counter*10)
+        model_stability = max(0, 100 - st.session_state.drift_counter*10)
 
-        action = "Normal Operation"
-        if severity=="HIGH":
-            action="Immediate Shutdown Recommended"
-        elif severity=="MEDIUM":
-            action="Inspect within 24 hrs"
-        elif severity=="LOW":
-            action="Monitor Closely"
+        if st.session_state.drift_counter >= 3:
+            st.warning("⚠️ Persistent Drift – Auto Retraining Triggered")
+            models, anomaly_model, baseline = train_models(load_data())
+            st.session_state.drift_counter = 0
 
-        # Logging
+        # ======================
+        # MAINTENANCE ACTION
+        # ======================
+        if severity == "🔴 HIGH":
+            action = "Immediate Shutdown Recommended"
+        elif severity == "🟠 MEDIUM":
+            action = "Inspect within 24 hrs"
+        elif severity == "🟡 LOW":
+            action = "Monitor Closely"
+        else:
+            action = "Normal Operation"
+
+        if severity in ["🔴 HIGH","🟠 MEDIUM"]:
+            st.error(f"🚨 ALERT: {action}")
+
+        # ======================
+        # SAFE LOGGING
+        # ======================
+        LOG_COLUMNS = ["Time","Pressure","Temperature","Flow",
+                       "P_Pred","T_Pred","F_Pred",
+                       "Score","Severity","FailureProb",
+                       "HealthScore","RUL","Action","ModelStability"]
+
         log = pd.DataFrame([[datetime.now(),pressure,temperature,flow,
                              p_pred,t_pred,f_pred,
                              score,severity,failure_prob,
-                             health_score,"Stable",
-                             action,model_stability]],
-                             columns=LOG_COLUMNS)
+                             health_score,rul,action,model_stability]],
+                           columns=LOG_COLUMNS)
 
-        log.to_csv(LOG_PATH,mode="a",
+        log.to_csv(LOG_PATH, mode='a',
                    header=not os.path.exists(LOG_PATH),
                    index=False)
 
         st.session_state.last_result = log.iloc[0]
+
 
 # =====================================================
 # DISPLAY
@@ -267,3 +328,10 @@ if os.path.exists(LOG_PATH):
         )
 
         st.plotly_chart(fig,use_container_width=True)
+# =====================================================
+# AUTO REFRESH LOOP
+# =====================================================
+    if auto_refresh:
+        time.sleep(refresh_interval)
+        st.rerun()
+
