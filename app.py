@@ -1,3 +1,25 @@
+import streamlit as st
+import joblib
+import pandas as pd
+import numpy as np
+import requests
+import os
+import time
+from bs4 import BeautifulSoup
+from datetime import datetime
+from sklearn.ensemble import RandomForestRegressor, IsolationForest
+import plotly.graph_objects as go
+from streamlit_autorefresh import st_autorefresh #delete
+
+# =====================================================
+# CONFIG
+# =====================================================
+DATA_FILE = r"D:\future\VBA\flow\data.csv"
+MODEL_PATH = r"D:\future\VBA\flow\rf_models.pkl"
+ANOMALY_PATH = r"D:\future\VBA\flow\anomaly_model.pkl"
+BASELINE_PATH = r"D:\future\VBA\flow\baseline_stats.pkl"
+LOG_PATH = r"D:\future\VBA\flow\live_log.csv"
+
 LIVE_URL = "https://markets.businessinsider.com/currencies/eth-usd"
 LIVE_CLASSES = [
     "price-section__current-value",
@@ -142,24 +164,29 @@ def detect_drift(residuals, baseline):
 # =====================================================
 # LOAD / TRAIN
 # =====================================================
-@st.cache_resource
-def load_or_train():
-    df = load_data()
-    if not all(map(os.path.exists, [MODEL_PATH, ANOMALY_PATH, BASELINE_PATH])):
-        return train_models(df)
-    return (
-        joblib.load(MODEL_PATH),
-        joblib.load(ANOMALY_PATH),
-        joblib.load(BASELINE_PATH)
-    )
+# =====================================================
+# LOAD MODELS ONLY ONCE
+# =====================================================
+if "models" not in st.session_state:
 
-models, anomaly_model, baseline = load_or_train()
-st.success("✅ Models Ready")
-def retrain_from_file():
-    df = pd.read_csv(DATA_FILE, header=None)
-    df.columns = ["Pressure","Temperature","Flow"]
-    df = df.apply(pd.to_numeric, errors="coerce").ffill().bfill()
-    return train_models(df)
+    df = load_data()
+
+    if not all(map(os.path.exists, [MODEL_PATH, ANOMALY_PATH, BASELINE_PATH])):
+        models, anomaly_model, baseline = train_models(df)
+    else:
+        models = joblib.load(MODEL_PATH)
+        anomaly_model = joblib.load(ANOMALY_PATH)
+        baseline = joblib.load(BASELINE_PATH)
+
+    st.session_state.models = models
+    st.session_state.anomaly_model = anomaly_model
+    st.session_state.baseline = baseline
+
+models = st.session_state.models
+anomaly_model = st.session_state.anomaly_model
+baseline = st.session_state.baseline
+
+
 
 
 # =====================================================
@@ -184,19 +211,36 @@ manual_retrain = st.sidebar.button("♻️ Retrain Models")
 
 if manual_train:
     with st.spinner("Training models..."):
-        models, anomaly_model, baseline = retrain_from_file()
+        models, anomaly_model, baseline = train_models(load_data())
+
+    st.session_state.models = models
+    st.session_state.anomaly_model = anomaly_model
+    st.session_state.baseline = baseline
+
     st.success("✅ Training completed")
 
-if manual_retrain:
+
+if manual_train:
     with st.spinner("Retraining models..."):
-        models, anomaly_model, baseline = retrain_from_file()
-    st.success("♻️ Retraining completed")
+        models, anomaly_model, baseline = train_models(load_data())
+
+    st.session_state.models = models
+    st.session_state.anomaly_model = anomaly_model
+    st.session_state.baseline = baseline
+
+    st.success("✅ Retraining completed")
+
+
 
 
 # =====================================================
 # MAIN EXECUTION
 # =====================================================
-if run:
+
+execute = run or auto_refresh
+
+if execute:
+
 
     flow = fetch_live_flow()
     st.sidebar.success(f"Live Flow: {flow}")
@@ -273,7 +317,10 @@ if run:
 # ADVANCED PM ENGINE
 # =====================================================
 
-if run:
+execute = run or auto_refresh
+
+if execute:
+
 
     flow = fetch_live_flow()
 
@@ -530,3 +577,9 @@ if os.path.exists(LOG_PATH):
 
     st.plotly_chart(fig, use_container_width=True)
 
+# =====================================================
+# AUTO REFRESH LOOP
+# =====================================================
+if auto_refresh:
+    time.sleep(refresh_interval)
+    st.rerun()
