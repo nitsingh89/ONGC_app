@@ -534,15 +534,15 @@ if st.session_state.last_result is not None:
     except Exception:
         df_log = pd.DataFrame()
     
-    expected_columns = ["Timestamp", "Flow", "F_Pred"]
+    required_cols = ["Flow", "F_Pred"]
     
-    if not set(expected_columns).issubset(df_log.columns):
-        df_log = pd.DataFrame(columns=expected_columns)
-    
-    if df_log.empty:
-        st.info("No trend data available yet.")
+    if df_log.empty or not all(col in df_log.columns for col in required_cols):
+        st.info("No valid trend data available yet.")
     else:
         df_log["Error"] = df_log["Flow"] - df_log["F_Pred"]
+
+    # your plotting code here
+
 
 
     df_log["Error"] = df_log["Flow"] - df_log["F_Pred"]
@@ -598,6 +598,7 @@ if st.session_state.last_result is not None:
 if auto_refresh:
     time.sleep(refresh_interval)
     st.rerun()
+
 
 
 
