@@ -14,11 +14,14 @@ from streamlit_autorefresh import st_autorefresh #delete
 # =====================================================
 # CONFIG
 # =====================================================
-DATA_FILE = "data.csv"
-MODEL_PATH = "rf_models.pkl"
-ANOMALY_PATH = "anomaly_model.pkl"
-BASELINE_PATH = "baseline_stats.pkl"
-LOG_PATH = "live_log.csv"
+BASE_DIR = os.path.dirname(__file__)
+
+DATA_FILE = os.path.join(BASE_DIR, "data.csv")
+MODEL_PATH = os.path.join(BASE_DIR, "rf_models.pkl")
+ANOMALY_PATH = os.path.join(BASE_DIR, "anomaly_model.pkl")
+BASELINE_PATH = os.path.join(BASE_DIR, "baseline_stats.pkl")
+LOG_PATH = os.path.join(BASE_DIR, "live_log.csv")
+
 
 LIVE_URL = "https://markets.businessinsider.com/currencies/eth-usd"
 LIVE_CLASSES = [
@@ -583,4 +586,5 @@ if os.path.exists(LOG_PATH):
 if auto_refresh:
     time.sleep(refresh_interval)
     st.rerun()
+
 
