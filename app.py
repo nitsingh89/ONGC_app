@@ -529,12 +529,20 @@ if st.session_state.last_result is not None:
     # Trend Visualization
     # =============================
 
-if os.path.exists(LOG_PATH):
-
     try:
-        df_log = pd.read_csv(LOG_PATH)
+        df_log = pd.read_csv(LOG_PATH, on_bad_lines="skip")
     except Exception:
-        df_log = pd.DataFrame()  # fallback if corrupted
+        df_log = pd.DataFrame()
+    
+    expected_columns = ["Timestamp", "Flow", "F_Pred"]
+    
+    if not set(expected_columns).issubset(df_log.columns):
+        df_log = pd.DataFrame(columns=expected_columns)
+    
+    if df_log.empty:
+        st.info("No trend data available yet.")
+    else:
+        df_log["Error"] = df_log["Flow"] - df_log["F_Pred"]
 
 
     df_log["Error"] = df_log["Flow"] - df_log["F_Pred"]
@@ -590,6 +598,7 @@ if os.path.exists(LOG_PATH):
 if auto_refresh:
     time.sleep(refresh_interval)
     st.rerun()
+
 
 
 
