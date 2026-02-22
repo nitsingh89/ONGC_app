@@ -533,40 +533,43 @@ try:
 except Exception:
     df_log = pd.DataFrame()
 
-required_cols = ["Timestamp", "Flow", "F_Pred"]
+df_log.columns = df_log.columns.str.strip().str.lower()
+
+required_cols = ["timestamp", "flow", "f_pred"]
 
 if not set(required_cols).issubset(df_log.columns):
     st.info("Trend data not available yet.")
 elif df_log.empty:
     st.info("No logged data yet.")
 else:
-    df_log["Flow"] = pd.to_numeric(df_log["Flow"], errors="coerce")
-    df_log["F_Pred"] = pd.to_numeric(df_log["F_Pred"], errors="coerce")
-    df_log["Timestamp"] = pd.to_datetime(df_log["Timestamp"], errors="coerce")
+    df_log["flow"] = pd.to_numeric(df_log["flow"], errors="coerce")
+    df_log["f_pred"] = pd.to_numeric(df_log["f_pred"], errors="coerce")
+    df_log["timestamp"] = pd.to_datetime(df_log["timestamp"], errors="coerce")
 
-    df_log = df_log.dropna(subset=["Flow", "F_Pred", "Timestamp"])
+    df_log = df_log.dropna(subset=["flow", "f_pred", "timestamp"])
 
     if df_log.empty:
         st.info("Logged data contains no valid numeric values yet.")
     else:
-        df_log["Error"] = df_log["Flow"] - df_log["F_Pred"]
+        df_log["error"] = df_log["flow"] - df_log["f_pred"]
 
         fig = go.Figure()
 
         fig.add_trace(go.Scatter(
-            x=df_log["Timestamp"],
-            y=df_log["Flow"],
-            name="Actual Flow"
+            x=df_log["timestamp"],
+            y=df_log["flow"],
+            name="Actual Flow",
+            mode="lines+markers"
         ))
 
         fig.add_trace(go.Scatter(
-            x=df_log["Timestamp"],
-            y=df_log["F_Pred"],
-            name="Predicted Flow"
+            x=df_log["timestamp"],
+            y=df_log["f_pred"],
+            name="Predicted Flow",
+            mode="lines+markers"
         ))
 
         st.plotly_chart(fig, use_container_width=True)
-
 
 
 
@@ -576,6 +579,7 @@ else:
 if auto_refresh:
     time.sleep(refresh_interval)
     st.rerun()
+
 
 
 
