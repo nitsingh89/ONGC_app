@@ -524,71 +524,49 @@ if st.session_state.last_result is not None:
     </div>
     """, unsafe_allow_html=True)
 
+# =============================
+# Trend Visualization
+# =============================
 
-    # =============================
-    # Trend Visualization
-    # =============================
+try:
+    df_log = pd.read_csv(LOG_PATH, on_bad_lines="skip")
+except Exception:
+    df_log = pd.DataFrame()
 
-    try:
-        df_log = pd.read_csv(LOG_PATH, on_bad_lines="skip")
-    except Exception:
-        df_log = pd.DataFrame()
-    
-    required_cols = ["Flow", "F_Pred"]
-    
-    if df_log.empty or not all(col in df_log.columns for col in required_cols):
-        st.info("No valid trend data available yet.")
+required_cols = ["Timestamp", "Flow", "F_Pred"]
+
+if not set(required_cols).issubset(df_log.columns):
+    st.info("Trend data not available yet.")
+elif df_log.empty:
+    st.info("No logged data yet.")
+else:
+    df_log["Flow"] = pd.to_numeric(df_log["Flow"], errors="coerce")
+    df_log["F_Pred"] = pd.to_numeric(df_log["F_Pred"], errors="coerce")
+    df_log["Timestamp"] = pd.to_datetime(df_log["Timestamp"], errors="coerce")
+
+    df_log = df_log.dropna(subset=["Flow", "F_Pred", "Timestamp"])
+
+    if df_log.empty:
+        st.info("Logged data contains no valid numeric values yet.")
     else:
         df_log["Error"] = df_log["Flow"] - df_log["F_Pred"]
 
-    # your plotting code here
+        fig = go.Figure()
 
-    df_log["Error"] = df_log["Flow"] - df_log["F_Pred"]
+        fig.add_trace(go.Scatter(
+            x=df_log["Timestamp"],
+            y=df_log["Flow"],
+            name="Actual Flow"
+        ))
 
-    fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=df_log["Timestamp"],
+            y=df_log["F_Pred"],
+            name="Predicted Flow"
+        ))
 
-    # Actual Flow
-    fig.add_trace(go.Scatter(
-        y=df_log["Flow"],
-        mode='lines',
-        name="Actual Flow",
-        line=dict(width=3)
-    ))
+        st.plotly_chart(fig, use_container_width=True)
 
-    # Predicted Flow
-    fig.add_trace(go.Scatter(
-        y=df_log["F_Pred"],
-        mode='lines',
-        name="Predicted Flow",
-        line=dict(dash='dash')
-    ))
-
-    # Error (Secondary Axis)
-    fig.add_trace(go.Scatter(
-        y=df_log["Error"],
-        mode='lines',
-        name="Prediction Error",
-        yaxis="y2",
-        line=dict(color='red')
-    ))
-
-    fig.update_layout(
-        height=500,
-        paper_bgcolor="#0e1117",
-        plot_bgcolor="#0e1117",
-        font_color="white",
-
-        yaxis=dict(title="Flow"),
-        yaxis2=dict(
-            title="Error",
-            overlaying="y",
-            side="right"
-        ),
-
-        legend=dict(x=0.01, y=0.99)
-    )
-
-    st.plotly_chart(fig, use_container_width=True)
 
 
 
@@ -598,6 +576,7 @@ if st.session_state.last_result is not None:
 if auto_refresh:
     time.sleep(refresh_interval)
     st.rerun()
+
 
 
 
